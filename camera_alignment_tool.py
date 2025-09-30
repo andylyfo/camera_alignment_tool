@@ -5,10 +5,43 @@ import numpy as np
 from typing import List, Tuple, Optional
 from dataclasses import dataclass, field
 
+ESCAPE_KEY = 27
+EPSILON = 1e-10
+PAN_DIFF_THRESH = 0.05  # 5% difference
+TILT_DIFF_THRESH = 0.02  # 2% difference
+ROTATION_DIFF_THRESH = 1.5  # degrees
+DARK_GREY_BGR = (40, 40, 40)
+BRIGHT_GREEN_BGR = (0, 255, 0)
+YELLOW_BGR = (0, 255, 255)
+RED_BGR = (0, 0, 255)
+BLUE_BGR = (255, 0, 0)
+WHITE_BGR = (255, 255, 255)
+CYAN_BGR = (0, 255, 255)
+LIGHT_BLUE_BGR = (100, 200, 255)
+LIGHT_GREY_BGR = (200, 200, 200)
+LINE_THICKNESS = 2
+POINT_RADIUS = 5
+VANISHING_POINT_RADIUS = 8
+HORIZON_LINE_THICKNESS = 2
+TEXT_FONT = cv2.FONT_HERSHEY_SIMPLEX
+HEADER_FONT_SCALE = 0.7
+METADATA_FONT_SCALE = 0.5
+SUGGESTION_FONT_SCALE = 0.6
+INSTRUCTION_FONT_SCALE = 0.5
+HEADER_FONT_THICKNESS = 2
+TEXT_FONT_THICKNESS = 1
+METADATA_HEIGHT = 250
+METADATA_Y_START = 30
+LINE_HEIGHT = 25
+COL1_X = 15
+SUGGESTIONS_Y_START = 135
+INSTRUCTION_Y_OFFSET = 10
+
 
 @dataclass
 class ImageState:
     """State for an image being annotated."""
+
     img: np.ndarray
     points: List[Tuple[int, int]] = field(default_factory=list)
     lines: List[Tuple[int, int, int, int]] = field(default_factory=list)
@@ -84,7 +117,7 @@ class RailwayAlignmentTool:
 
         denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
 
-        if abs(denom) < 1e-10:
+        if abs(denom) < EPSILON:
             return None
 
         t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
@@ -120,7 +153,7 @@ class RailwayAlignmentTool:
         vp_y2 = self.state2.vanishing_point[1]
         horizon_diff = vp_y2 - vp_y1
 
-        if abs(horizon_diff) > h * 0.02:  # More than 2% difference
+        if abs(horizon_diff) > h * TILT_DIFF_THRESH:
             if horizon_diff > 0:
                 suggestions.append(f"Cam2: TILT DOWN {abs(horizon_diff):.1f}px " "(horizon too high)")
             else:
@@ -131,7 +164,7 @@ class RailwayAlignmentTool:
         vp_x2 = self.state2.vanishing_point[0]
         horiz_diff = vp_x2 - vp_x1
 
-        if abs(horiz_diff) > w * 0.05:  # More than 5% difference
+        if abs(horiz_diff) > w * PAN_DIFF_THRESH:
             if horiz_diff > 0:
                 suggestions.append(f"Cam2: PAN LEFT {abs(horiz_diff):.1f}px " "(vanishing point too far right)")
             else:
@@ -152,7 +185,7 @@ class RailwayAlignmentTool:
         avg_angle2 = (left_angle2 + right_angle2) / 2
         rotation_diff = avg_angle2 - avg_angle1
 
-        if abs(rotation_diff) > 1.5:  # More than 1.5 degrees
+        if abs(rotation_diff) > ROTATION_DIFF_THRESH:
             if rotation_diff > 0:
                 suggestions.append(f"Cam2: ROTATE CCW {abs(rotation_diff):.1f}deg " "(rails tilted right)")
             else:
@@ -185,16 +218,16 @@ class RailwayAlignmentTool:
 
         # draw completed lines
         for x1, y1, x2, y2 in state.lines:
-            cv2.line(result, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.line(result, (x1, y1), (x2, y2), BRIGHT_GREEN_BGR, LINE_THICKNESS)
 
         # draw current incomplete line
         if len(state.points) == 1:
-            cv2.circle(result, state.points[0], 5, (0, 255, 255), -1)
+            cv2.circle(result, state.points[0], POINT_RADIUS, YELLOW_BGR, -1)
 
         # draw vanishing point
         if state.vanishing_point is not None:
             vp_x, vp_y = state.vanishing_point
-            cv2.circle(result, (int(vp_x), int(vp_y)), 8, (0, 0, 255), -1)
+            cv2.circle(result, (int(vp_x), int(vp_y)), VANISHING_POINT_RADIUS, RED_BGR, -1)
 
         return result
 
@@ -209,33 +242,30 @@ class RailwayAlignmentTool:
 
         if self.state1.vanishing_point is not None:
             vp_y1 = int(self.state1.vanishing_point[1])
-            cv2.line(combined, (0, vp_y1), (w, vp_y1), (255, 0, 0), 2)
+            cv2.line(combined, (0, vp_y1), (w, vp_y1), BLUE_BGR, HORIZON_LINE_THICKNESS)
 
         if self.state2.vanishing_point is not None:
             vp_y2 = int(self.state2.vanishing_point[1])
-            cv2.line(combined, (w, vp_y2), (w * 2, vp_y2), (255, 0, 0), 2)
+            cv2.line(combined, (w, vp_y2), (w * 2, vp_y2), BLUE_BGR, HORIZON_LINE_THICKNESS)
 
         # metadata panel
-        metadata_height = 250
-        metadata_panel = np.zeros((metadata_height, w * 2, 3), dtype=np.uint8)
-        metadata_panel[:] = (40, 40, 40)  # Dark gray background
+        metadata_panel = np.zeros((METADATA_HEIGHT, w * 2, 3), dtype=np.uint8)
+        metadata_panel[:] = DARK_GREY_BGR
 
-        y_pos = 30
-        line_height = 25
-        col1_x = 15
-        col2_x = w + 15
+        y_pos = METADATA_Y_START
+        col2_x = w + COL1_X
 
         # columns
-        col1_colour = (0, 255, 0)
-        col2_colour = (100, 200, 255)
+        col1_colour = BRIGHT_GREEN_BGR
+        col2_colour = LIGHT_BLUE_BGR
 
         if self.current_img_idx == 1:
-            col1_colour = (100, 200, 255)
-            col2_colour = (0, 255, 0)
+            col1_colour = LIGHT_BLUE_BGR
+            col2_colour = BRIGHT_GREEN_BGR
 
-        cv2.putText(metadata_panel, "Camera 1", (col1_x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.7, col1_colour, 2)
-        cv2.putText(metadata_panel, "Camera 2", (col2_x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.7, col2_colour, 2)
-        y_pos += line_height + 5
+        cv2.putText(metadata_panel, "Camera 1", (COL1_X, y_pos), TEXT_FONT, HEADER_FONT_SCALE, col1_colour, HEADER_FONT_THICKNESS)
+        cv2.putText(metadata_panel, "Camera 2", (col2_x, y_pos), TEXT_FONT, HEADER_FONT_SCALE, col2_colour, HEADER_FONT_THICKNESS)
+        y_pos += LINE_HEIGHT + 5
 
         # cam1 metadata
         if len(self.state1.lines) >= 2:
@@ -243,54 +273,60 @@ class RailwayAlignmentTool:
             left_angle = self.calculate_line_angle(left_rail)
             right_angle = self.calculate_line_angle(right_rail)
 
-            cv2.putText(metadata_panel, f"Left Rail: {left_angle:.1f}deg", (col1_x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            y_pos += line_height
-            cv2.putText(metadata_panel, f"Right Rail: {right_angle:.1f}deg", (col1_x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            y_pos += line_height
+            cv2.putText(metadata_panel, f"Left Rail: {left_angle:.1f}deg", (COL1_X, y_pos), TEXT_FONT, METADATA_FONT_SCALE, WHITE_BGR, TEXT_FONT_THICKNESS)
+            y_pos += LINE_HEIGHT
+            cv2.putText(metadata_panel, f"Right Rail: {right_angle:.1f}deg", (COL1_X, y_pos), TEXT_FONT, METADATA_FONT_SCALE, WHITE_BGR, TEXT_FONT_THICKNESS)
+            y_pos += LINE_HEIGHT
         elif len(self.state1.lines) >= 1:
-            y_pos += line_height * 2
+            y_pos += LINE_HEIGHT * 2
         else:
-            y_pos += line_height * 2
+            y_pos += LINE_HEIGHT * 2
 
         if self.state1.vanishing_point is not None:
             vp_y1_pct = (self.state1.vanishing_point[1] / h) * 100
-            cv2.putText(metadata_panel, f"Horizon: {vp_y1_pct:.1f}%", (col1_x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(metadata_panel, f"Horizon: {vp_y1_pct:.1f}%", (COL1_X, y_pos), TEXT_FONT, METADATA_FONT_SCALE, WHITE_BGR, TEXT_FONT_THICKNESS)
 
         # cam2 metadata
-        y_pos = 30 + line_height + 5
+        y_pos = METADATA_Y_START + LINE_HEIGHT + 5
         if len(self.state2.lines) >= 2:
             left_rail, right_rail = self.get_sorted_rails(self.state2.lines)
             left_angle = self.calculate_line_angle(left_rail)
             right_angle = self.calculate_line_angle(right_rail)
 
-            cv2.putText(metadata_panel, f"Left Rail: {left_angle:.1f}deg", (col2_x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            y_pos += line_height
-            cv2.putText(metadata_panel, f"Right Rail: {right_angle:.1f}deg", (col2_x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            y_pos += line_height
+            cv2.putText(metadata_panel, f"Left Rail: {left_angle:.1f}deg", (col2_x, y_pos), TEXT_FONT, METADATA_FONT_SCALE, WHITE_BGR, TEXT_FONT_THICKNESS)
+            y_pos += LINE_HEIGHT
+            cv2.putText(metadata_panel, f"Right Rail: {right_angle:.1f}deg", (col2_x, y_pos), TEXT_FONT, METADATA_FONT_SCALE, WHITE_BGR, TEXT_FONT_THICKNESS)
+            y_pos += LINE_HEIGHT
         elif len(self.state2.lines) >= 1:
-            y_pos += line_height * 2
+            y_pos += LINE_HEIGHT * 2
         else:
-            y_pos += line_height * 2
+            y_pos += LINE_HEIGHT * 2
 
         if self.state2.vanishing_point is not None:
             vp_y2_pct = (self.state2.vanishing_point[1] / h) * 100
-            cv2.putText(metadata_panel, f"Horizon: {vp_y2_pct:.1f}%", (col2_x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(metadata_panel, f"Horizon: {vp_y2_pct:.1f}%", (col2_x, y_pos), TEXT_FONT, METADATA_FONT_SCALE, WHITE_BGR, TEXT_FONT_THICKNESS)
 
         # suggestions
         suggestions = self.generate_alignment_suggestions()
         if suggestions:
-            y_pos = 135
-            cv2.putText(metadata_panel, "Alignment Suggestions:", (col1_x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-            y_pos += line_height
+            y_pos = SUGGESTIONS_Y_START
+            cv2.putText(metadata_panel, "Alignment Suggestions:", (COL1_X, y_pos), TEXT_FONT, SUGGESTION_FONT_SCALE, CYAN_BGR, HEADER_FONT_THICKNESS)
+            y_pos += LINE_HEIGHT
 
             for suggestion in suggestions:
-                color = (0, 255, 0) if "well aligned" in suggestion else (100, 200, 255)
-                cv2.putText(metadata_panel, f"  {suggestion}", (col1_x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-                y_pos += line_height - 5
+                color = BRIGHT_GREEN_BGR if "well aligned" in suggestion else LIGHT_BLUE_BGR
+                cv2.putText(metadata_panel, f"  {suggestion}", (COL1_X, y_pos), TEXT_FONT, METADATA_FONT_SCALE, color, TEXT_FONT_THICKNESS)
+                y_pos += LINE_HEIGHT - 5
 
         display = np.vstack([combined, metadata_panel])
         cv2.putText(
-            display, "Click to draw rails | U: undo | R: reset all | Q: quit", (10, h + metadata_height - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1
+            display,
+            "Click to draw rails | U: undo | R: reset all | Q: quit",
+            (INSTRUCTION_Y_OFFSET, h + METADATA_HEIGHT - INSTRUCTION_Y_OFFSET),
+            TEXT_FONT,
+            INSTRUCTION_FONT_SCALE,
+            LIGHT_GREY_BGR,
+            TEXT_FONT_THICKNESS,
         )
 
         cv2.imshow(self.window_name, display)
@@ -340,9 +376,9 @@ class RailwayAlignmentTool:
         while True:
             key = cv2.waitKey(1) & 0xFF
 
-            if key == ord("q") or key == 27:  # q or ESC
+            if key == ord("q") or key == ESCAPE_KEY:
                 break
-            elif key == ord('u'):
+            elif key == ord("u"):
                 self.undo_last_action()
             elif key == ord("r"):
                 self.reset_all()
