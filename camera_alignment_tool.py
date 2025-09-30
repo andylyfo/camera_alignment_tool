@@ -343,5 +343,10 @@ class RailwayAlignmentTool:
 
 
 if __name__ == "__main__":
-    tool = RailwayAlignmentTool("camera1.png", "camera2.png")
+    import sys
+
+    img1 = sys.argv[1] if len(sys.argv) > 1 else "camera1.png"
+    img2 = sys.argv[2] if len(sys.argv) > 2 else "camera2.png"
+
+    tool = RailwayAlignmentTool(img1, img2)
     tool.run()
