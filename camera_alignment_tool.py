@@ -53,10 +53,14 @@ class RailwayAlignmentTool:
             if x < w:
                 # clicked on left image
                 state = self.state1
+                self.current_state = self.state1
+                self.current_img_idx = 0
                 click_x = x
             else:
                 # clicked on right image
                 state = self.state2
+                self.current_state = self.state2
+                self.current_img_idx = 1
                 click_x = x - w
 
             state.points.append((click_x, y))
@@ -222,8 +226,15 @@ class RailwayAlignmentTool:
         col2_x = w + 15
 
         # columns
-        cv2.putText(metadata_panel, "Camera 1", (col1_x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 200, 255), 2)
-        cv2.putText(metadata_panel, "Camera 2", (col2_x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 200, 255), 2)
+        col1_colour = (0, 255, 0)
+        col2_colour = (100, 200, 255)
+
+        if self.current_img_idx == 1:
+            col1_colour = (100, 200, 255)
+            col2_colour = (0, 255, 0)
+
+        cv2.putText(metadata_panel, "Camera 1", (col1_x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.7, col1_colour, 2)
+        cv2.putText(metadata_panel, "Camera 2", (col2_x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.7, col2_colour, 2)
         y_pos += line_height + 5
 
         # cam1 metadata
@@ -331,11 +342,8 @@ class RailwayAlignmentTool:
 
             if key == ord("q") or key == 27:  # q or ESC
                 break
-            elif key == ord(" "):
-                self.switch_image()
-            # TODO undo doesn't quite work. Use reset for now
-            # elif key == ord('u'):
-            #     self.undo_last_action()
+            elif key == ord('u'):
+                self.undo_last_action()
             elif key == ord("r"):
                 self.reset_all()
 
