@@ -209,7 +209,7 @@ class RailwayAlignmentTool:
         avg_angle2 = (left_angle2 + right_angle2) / 2
         rotation_diff = avg_angle2 - avg_angle1
 
-        # uncommment to enable rotation check. unnsure if it's that useful
+        # uncomment to enable rotation check. unsure if it's that useful
         # if abs(rotation_diff) > ROTATION_DIFF_THRESH:
         #     if rotation_diff > 0:
         #         suggestions.append(f"Cam2: ROTATE CCW {abs(rotation_diff):.1f}deg " "(rails tilted right)")
