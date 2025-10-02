@@ -7,7 +7,8 @@ Interactive tool for comparing and aligning cameras using railheads.
 ## Requirements
 
 ```bash
-pip install opencv-python numpy
+python -m venv venv
+pip install -r requirements.txt
 ```
 
 ## Usage
