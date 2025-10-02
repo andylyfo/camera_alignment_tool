@@ -139,6 +139,26 @@ class RailwayAlignmentTool:
         angle_rad = np.arctan2(y2 - y1, x2 - x1)
         return np.degrees(angle_rad)
 
+    @staticmethod
+    def calculate_bottom_intersections(state: ImageState) -> Optional[Tuple[float, float]]:
+        """Calculate where rails intersect the bottom edge of frame."""
+        h, w = state.img.shape[:2]
+        if len(state.lines) < 2:
+            return None
+
+        intersections = []
+        for x1, y1, x2, y2 in state.lines:
+            if abs(y2 - y1) < EPSILON:
+                continue
+            m = (y2 - y1) / (x2 - x1)
+            c = y1 - m * x1
+            x_at_bottom = (h - c) / m
+            intersections.append(x_at_bottom)
+
+        if len(intersections) == 2:
+            return tuple(sorted(intersections))  # type: ignore
+        return None
+
     def generate_alignment_suggestions(self) -> List[str]:
         """Generate camera alignment suggestions based on rail analysis."""
         suggestions = []
@@ -191,6 +211,23 @@ class RailwayAlignmentTool:
         #         suggestions.append(f"Cam2: ROTATE CCW {abs(rotation_diff):.1f}deg " "(rails tilted right)")
         #     else:
         #         suggestions.append(f"Cam2: ROTATE CW {abs(rotation_diff):.1f}deg " "(rails tilted left)")
+
+        # (experimental) gauge difference check
+        bottom1 = self.calculate_bottom_intersections(self.state1)
+        bottom2 = self.calculate_bottom_intersections(self.state2)
+
+        if bottom1 and bottom2:
+            gauge1 = abs(bottom1[1] - bottom1[0])
+            gauge2 = abs(bottom2[1] - bottom2[0])
+            gauge_diff_pct = abs(gauge1 - gauge2) / gauge1 * 100
+
+            sign = "-" if gauge1 > gauge2 else "+"
+
+            if gauge_diff_pct > 10:
+                suggestions.append(
+                    f"Gauge mismatch: {sign}{gauge_diff_pct:.1f}% "
+                    f"(Cam1: {gauge1:.0f}px, Cam2: {gauge2:.0f}px)"
+                )
 
         if not suggestions:
             suggestions.append("Cameras are well aligned!")
