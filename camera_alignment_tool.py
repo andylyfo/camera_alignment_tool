@@ -190,9 +190,9 @@ class RailwayAlignmentTool:
 
         if abs(horiz_diff) > w * PAN_DIFF_THRESH:
             if horiz_diff > 0:
-                suggestions.append(f"Cam2: PAN LEFT {abs(horiz_diff):.1f}px " "(vanishing point too far right)")
+                suggestions.append(f"Cam2: PAN RIGHT {abs(horiz_diff):.1f}px " "(vanishing point too far right)")
             else:
-                suggestions.append(f"Cam2: PAN RIGHT {abs(horiz_diff):.1f}px " "(vanishing point too far left)")
+                suggestions.append(f"Cam2: PAN LEFT {abs(horiz_diff):.1f}px " "(vanishing point too far left)")
 
         # get sorted rails (left to right based on average x position)
         left_rail1, right_rail1 = self.get_sorted_rails(self.state1.lines)
