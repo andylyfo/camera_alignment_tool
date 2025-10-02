@@ -150,9 +150,13 @@ class RailwayAlignmentTool:
         for x1, y1, x2, y2 in state.lines:
             if abs(y2 - y1) < EPSILON:
                 continue
-            m = (y2 - y1) / (x2 - x1)
-            c = y1 - m * x1
-            x_at_bottom = (h - c) / m
+
+            if x2 - x1 == 0:
+                x_at_bottom = x2
+            else:
+                m = (y2 - y1) / (x2 - x1)
+                c = y1 - m * x1
+                x_at_bottom = (h - c) / m
             intersections.append(x_at_bottom)
 
         if len(intersections) == 2:
