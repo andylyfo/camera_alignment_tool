@@ -134,9 +134,16 @@ class RailwayAlignmentTool:
             self.current_state.vanishing_point = vp
 
     def calculate_line_angle(self, line: Tuple[int, int, int, int]) -> float:
-        """Calculate angle of a line in degrees from horizontal."""
+        """Calculate angle of a line in degrees from horizontal (normalised bottom point to top)."""
         x1, y1, x2, y2 = line
-        angle_rad = np.arctan2(y2 - y1, x2 - x1)
+
+        if y1 > y2:
+            # p1 is bottom (near), p2 is top (far)
+            angle_rad = np.arctan2(y2 - y1, x2 - x1)
+        else:
+            # p2 is bottom (near), p1 is top (far)
+            angle_rad = np.arctan2(y1 - y2, x1 - x2)
+
         return np.degrees(angle_rad)
 
     @staticmethod
