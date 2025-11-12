@@ -19,10 +19,13 @@ WHITE_BGR = (255, 255, 255)
 CYAN_BGR = (0, 255, 255)
 LIGHT_BLUE_BGR = (100, 200, 255)
 LIGHT_GREY_BGR = (200, 200, 200)
+MAGENTA_BGR = (255, 0, 255)
+ORANGE_BGR = (0, 165, 255)
 LINE_THICKNESS = 2
 POINT_RADIUS = 5
 VANISHING_POINT_RADIUS = 8
 HORIZON_LINE_THICKNESS = 2
+POLYGON_THICKNESS = 2
 TEXT_FONT = cv2.FONT_HERSHEY_SIMPLEX
 HEADER_FONT_SCALE = 0.7
 METADATA_FONT_SCALE = 0.5
@@ -76,6 +79,7 @@ class RailwayAlignmentTool:
         self.current_img_idx = 0
 
         self.window_name = "Camera Alignment Tool"
+        self.polygon_mode = False  # Toggle between line mode and polygon mode
 
     def mouse_callback(self, event: int, x: int, y: int, flags: int, param: None) -> None:
         """Handle mouse events for drawing rail lines."""
@@ -211,34 +215,32 @@ class RailwayAlignmentTool:
         left_angle2 = self.calculate_line_angle(left_rail2)
         right_angle2 = self.calculate_line_angle(right_rail2)
 
-        # average angle comparison (rotation check)
-        avg_angle1 = (left_angle1 + right_angle1) / 2
-        avg_angle2 = (left_angle2 + right_angle2) / 2
-        rotation_diff = avg_angle2 - avg_angle1
+        left_angle_diff = left_angle2 - left_angle1
+        right_angle_diff = right_angle2 - right_angle1
 
-        # uncomment to enable rotation check. unsure if it's that useful
-        # if abs(rotation_diff) > ROTATION_DIFF_THRESH:
-        #     if rotation_diff > 0:
-        #         suggestions.append(f"Cam2: ROTATE CCW {abs(rotation_diff):.1f}deg " "(rails tilted right)")
-        #     else:
-        #         suggestions.append(f"Cam2: ROTATE CW {abs(rotation_diff):.1f}deg " "(rails tilted left)")
+        if abs(left_angle_diff) > ROTATION_DIFF_THRESH or abs(right_angle_diff) > ROTATION_DIFF_THRESH:
+            avg_angle_diff = (left_angle_diff + right_angle_diff) / 2
+            if avg_angle_diff > 0:
+                suggestions.append(f"Cam2: ROTATE CCW {abs(avg_angle_diff):.1f}deg " "(rails tilted clockwise)")
+            else:
+                suggestions.append(f"Cam2: ROTATE CW {abs(avg_angle_diff):.1f}deg " "(rails tilted counter-clockwise)")
 
-        # (experimental) gauge difference check
-        bottom1 = self.calculate_bottom_intersections(self.state1)
-        bottom2 = self.calculate_bottom_intersections(self.state2)
+        # rail gauge comparison (spacing at bottom of frame)
+        bottom_intersections1 = self.calculate_bottom_intersections(self.state1)
+        bottom_intersections2 = self.calculate_bottom_intersections(self.state2)
 
-        if bottom1 and bottom2:
-            gauge1 = abs(bottom1[1] - bottom1[0])
-            gauge2 = abs(bottom2[1] - bottom2[0])
-            gauge_diff_pct = abs(gauge1 - gauge2) / gauge1 * 100
+        if bottom_intersections1 is not None and bottom_intersections2 is not None:
+            gauge1 = abs(bottom_intersections1[1] - bottom_intersections1[0])
+            gauge2 = abs(bottom_intersections2[1] - bottom_intersections2[0])
+            gauge_diff_pct = abs((gauge2 - gauge1) / gauge1) * 100
 
             sign = "-" if gauge1 > gauge2 else "+"
 
-            if gauge_diff_pct > 10:
-                suggestions.append(
-                    f"Gauge mismatch: {sign}{gauge_diff_pct:.1f}% "
-                    f"(Cam1: {gauge1:.0f}px, Cam2: {gauge2:.0f}px)"
-                )
+            # if gauge_diff_pct > 10:
+            #     suggestions.append(
+            #         f"Gauge mismatch: {sign}{gauge_diff_pct:.1f}% "
+            #         f"(Cam1: {gauge1:.0f}px, Cam2: {gauge2:.0f}px)"
+            #     )
 
         if not suggestions:
             suggestions.append("Cameras are well aligned!")
@@ -259,6 +261,80 @@ class RailwayAlignmentTool:
             return line1, line2
         else:
             return line2, line1
+
+    @staticmethod
+    def extract_polygon_points(state: ImageState) -> Optional[np.ndarray]:
+        """Extract four corner points from two lines to form a polygon."""
+        if len(state.lines) != 2:
+            return None
+
+        # Get all four points from the two lines
+        line1 = state.lines[0]
+        line2 = state.lines[1]
+
+        points = np.array([
+            [line1[0], line1[1]],  # line1 point1
+            [line1[2], line1[3]],  # line1 point2
+            [line2[0], line2[1]],  # line2 point1
+            [line2[2], line2[3]]   # line2 point2
+        ], dtype=np.int32)
+
+        return points
+
+    @staticmethod
+    def draw_polygon_overlay(img: np.ndarray, own_points: Optional[np.ndarray],
+                            other_points: Optional[np.ndarray], is_own: bool = True) -> np.ndarray:
+        """Draw polygon overlay on image."""
+        result = img.copy()
+
+        # Draw own polygon (solid)
+        if own_points is not None:
+            own_color = BRIGHT_GREEN_BGR if is_own else LIGHT_BLUE_BGR
+            cv2.polylines(result, [own_points], isClosed=True,
+                         color=own_color, thickness=POLYGON_THICKNESS)
+            # Draw filled semi-transparent polygon
+            overlay = result.copy()
+            cv2.fillPoly(overlay, [own_points], own_color)
+            cv2.addWeighted(overlay, 0.15, result, 0.85, 0, result)
+
+            # Draw points
+            for point in own_points:
+                cv2.circle(result, tuple(point), POINT_RADIUS, own_color, -1)
+
+        # Draw other image's polygon overlay (dashed/dotted appearance)
+        if other_points is not None:
+            other_color = MAGENTA_BGR
+            # Draw dashed lines by drawing segments
+            for i in range(len(other_points)):
+                pt1 = tuple(other_points[i])
+                pt2 = tuple(other_points[(i + 1) % len(other_points)])
+
+                # Calculate line length and draw dashed line
+                length = np.linalg.norm(np.array(pt1) - np.array(pt2))
+                dash_length = 10
+                gap_length = 5
+                num_dashes = int(length / (dash_length + gap_length))
+
+                for j in range(num_dashes):
+                    start_ratio = j * (dash_length + gap_length) / length
+                    end_ratio = (j * (dash_length + gap_length) + dash_length) / length
+
+                    start_pt = (
+                        int(pt1[0] + (pt2[0] - pt1[0]) * start_ratio),
+                        int(pt1[1] + (pt2[1] - pt1[1]) * start_ratio)
+                    )
+                    end_pt = (
+                        int(pt1[0] + (pt2[0] - pt1[0]) * end_ratio),
+                        int(pt1[1] + (pt2[1] - pt1[1]) * end_ratio)
+                    )
+
+                    cv2.line(result, start_pt, end_pt, other_color, POLYGON_THICKNESS)
+
+            # Draw points as hollow circles
+            for point in other_points:
+                cv2.circle(result, tuple(point), POINT_RADIUS, other_color, 2)
+
+        return result
 
     @staticmethod
     def draw_annotations(img: np.ndarray, state: ImageState) -> np.ndarray:
@@ -282,20 +358,38 @@ class RailwayAlignmentTool:
 
     def update_display(self) -> None:
         """Update the display with current annotations."""
-        annotated1 = self.draw_annotations(self.state1.img, self.state1)
-        annotated2 = self.draw_annotations(self.state2.img, self.state2)
+        if self.polygon_mode:
+            # Extract polygons from both images
+            poly1 = self.extract_polygon_points(self.state1)
+            poly2 = self.extract_polygon_points(self.state2)
+
+            # Draw polygons with overlays
+            annotated1 = self.draw_polygon_overlay(self.state1.img, poly1, poly2, is_own=True)
+            annotated2 = self.draw_polygon_overlay(self.state2.img, poly2, poly1, is_own=True)
+
+            # Draw current incomplete points in polygon mode
+            if len(self.state1.points) == 1:
+                cv2.circle(annotated1, self.state1.points[0], POINT_RADIUS, YELLOW_BGR, -1)
+            if len(self.state2.points) == 1:
+                cv2.circle(annotated2, self.state2.points[0], POINT_RADIUS, YELLOW_BGR, -1)
+        else:
+            # Original line drawing mode
+            annotated1 = self.draw_annotations(self.state1.img, self.state1)
+            annotated2 = self.draw_annotations(self.state2.img, self.state2)
 
         h, w = annotated1.shape[:2]
 
         combined = np.hstack([annotated1, annotated2])
 
-        if self.state1.vanishing_point is not None:
-            vp_y1 = int(self.state1.vanishing_point[1])
-            cv2.line(combined, (0, vp_y1), (w, vp_y1), BLUE_BGR, HORIZON_LINE_THICKNESS)
+        # Only draw horizon lines in line mode
+        if not self.polygon_mode:
+            if self.state1.vanishing_point is not None:
+                vp_y1 = int(self.state1.vanishing_point[1])
+                cv2.line(combined, (0, vp_y1), (w, vp_y1), BLUE_BGR, HORIZON_LINE_THICKNESS)
 
-        if self.state2.vanishing_point is not None:
-            vp_y2 = int(self.state2.vanishing_point[1])
-            cv2.line(combined, (w, vp_y2), (w * 2, vp_y2), BLUE_BGR, HORIZON_LINE_THICKNESS)
+            if self.state2.vanishing_point is not None:
+                vp_y2 = int(self.state2.vanishing_point[1])
+                cv2.line(combined, (w, vp_y2), (w * 2, vp_y2), BLUE_BGR, HORIZON_LINE_THICKNESS)
 
         # metadata panel
         metadata_panel = np.zeros((METADATA_HEIGHT, w * 2, 3), dtype=np.uint8)
@@ -368,9 +462,14 @@ class RailwayAlignmentTool:
                 y_pos += LINE_HEIGHT - 5
 
         display = np.vstack([combined, metadata_panel])
+
+        # Update instructions based on mode
+        mode_text = "[POLYGON MODE]" if self.polygon_mode else "[LINE MODE]"
+        instruction_text = f"{mode_text} Click: draw | P: toggle mode | U: undo | R: reset | Q: quit"
+
         cv2.putText(
             display,
-            "Click to draw rails | U: undo | R: reset all | Q: quit",
+            instruction_text,
             (INSTRUCTION_Y_OFFSET, h + METADATA_HEIGHT - INSTRUCTION_Y_OFFSET),
             TEXT_FONT,
             INSTRUCTION_FONT_SCALE,
@@ -379,6 +478,11 @@ class RailwayAlignmentTool:
         )
 
         cv2.imshow(self.window_name, display)
+
+    def toggle_polygon_mode(self) -> None:
+        """Toggle between line mode and polygon mode."""
+        self.polygon_mode = not self.polygon_mode
+        self.update_display()
 
     def undo_last_action(self) -> None:
         """Undo the last action (point or line)."""
@@ -431,6 +535,8 @@ class RailwayAlignmentTool:
                 self.undo_last_action()
             elif key == ord("r"):
                 self.reset_all()
+            elif key == ord("p"):
+                self.toggle_polygon_mode()
 
         cv2.destroyAllWindows()
 
