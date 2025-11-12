@@ -21,4 +21,5 @@ python camera_alignment_tool.py camera1.png camera2.png
 - **Click** - Draw rail lines (2 clicks per line, 2 lines per camera)
 - **U** - Undo last action (on selected/last-clicked image)
 - **R** - Reset all annotations
+- **P** - Polygon Mode (WIP)
 - **Q** - Quit
